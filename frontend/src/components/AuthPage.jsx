@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Sparkles, Mail, Lock, User, AlertCircle } from 'lucide-react';
+import { getApiUrl } from '../config';
 
 export default function AuthPage({ onLoginSuccess }) {
   const [isLogin, setIsLogin] = useState(true);
@@ -18,7 +19,7 @@ export default function AuthPage({ onLoginSuccess }) {
     const payload = isLogin ? { email, password } : { name, email, password };
 
     try {
-      const response = await fetch(`http://localhost:5001${endpoint}`, {
+      const response = await fetch(`${getApiUrl()}${endpoint}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -46,10 +47,11 @@ export default function AuthPage({ onLoginSuccess }) {
       <div style={styles.glowOrb1}></div>
       <div style={styles.glowOrb2}></div>
 
-      <div style={styles.grid}>
+      <div style={styles.grid} className="auth-grid">
         {/* Visual Info Panel */}
-        <div style={styles.infoPanel} className="glass-panel">
+        <div style={styles.infoPanel} className="glass-panel auth-info-panel">
           <div style={styles.badgeContainer}>
+
             <span className="badge badge-progress" style={styles.tag}>
               <Sparkles size={12} style={{ marginRight: '4px' }} />
               Next-Gen Meeting Intelligence

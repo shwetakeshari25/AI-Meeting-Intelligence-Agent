@@ -340,7 +340,7 @@ button, input, textarea, select {
   border: 1px solid rgba(16, 185, 129, 0.2);
 }
 
-/* Responsive grid styles */
+/* Responsive grid and mobile layout overrides */
 @media (max-width: 1024px) {
   .app-container {
     flex-direction: column;
@@ -350,4 +350,49 @@ button, input, textarea, select {
     padding: 20px;
     height: auto;
   }
+  .mobile-content {
+    margin-left: 0 !important;
+    padding: 80px 16px 30px 16px !important; /* Top padding to clear fixed header */
+    height: auto !important;
+    overflow-y: visible !important;
+  }
+  .auth-grid {
+    grid-template-columns: 1fr !important;
+    gap: 20px !important;
+  }
+  .dashboard-main-grid {
+    grid-template-columns: 1fr !important;
+    gap: 24px !important;
+  }
+  .meeting-room-grid {
+    grid-template-columns: 1fr !important;
+    gap: 24px !important;
+  }
+  .meeting-results-grid {
+    grid-template-columns: 1fr !important;
+    gap: 24px !important;
+  }
+  .kanban-board-grid {
+    grid-template-columns: 1fr !important;
+    gap: 20px !important;
+  }
+  .analytics-main-grid {
+    grid-template-columns: 1fr !important;
+    gap: 24px !important;
+  }
 }
+
+@media (max-width: 768px) {
+  .auth-info-panel {
+    display: none !important;
+  }
+  .auth-wrapper {
+    padding: 12px !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+  .auth-grid {
+    margin-top: 0 !important;
+  }
+}
+

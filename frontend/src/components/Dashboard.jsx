@@ -9,8 +9,11 @@ import {
   ListTodo,
   CalendarCheck,
   Video,
-  Sparkles
+  Sparkles,
+  Laptop,
+  Smartphone
 } from 'lucide-react';
+import { getApiUrl } from '../config';
 
 export default function Dashboard({ user, token, onSelectMeeting, setActiveTab }) {
   const [meetings, setMeetings] = useState([]);
@@ -38,14 +41,14 @@ export default function Dashboard({ user, token, onSelectMeeting, setActiveTab }
     setLoading(true);
     try {
       // Fetch meetings
-      const meetingsRes = await fetch('http://localhost:5001/api/meetings', {
+      const meetingsRes = await fetch(`${getApiUrl()}/api/meetings`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const meetingsData = await meetingsRes.json();
       if (meetingsRes.ok) setMeetings(meetingsData);
 
       // Fetch analytics summary
-      const statsRes = await fetch('http://localhost:5001/api/analytics/summary', {
+      const statsRes = await fetch(`${getApiUrl()}/api/analytics/summary`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const statsData = await statsRes.json();
@@ -63,7 +66,7 @@ export default function Dashboard({ user, token, onSelectMeeting, setActiveTab }
     setSchedulingLoading(true);
 
     try {
-      const res = await fetch('http://localhost:5001/api/meetings/schedule', {
+      const res = await fetch(`${getApiUrl()}/api/meetings/schedule`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -111,6 +114,7 @@ export default function Dashboard({ user, token, onSelectMeeting, setActiveTab }
           <span>Schedule Meeting</span>
         </button>
       </div>
+
 
       {/* Stats Section */}
       <div style={styles.statsGrid}>
@@ -160,7 +164,7 @@ export default function Dashboard({ user, token, onSelectMeeting, setActiveTab }
         </div>
       </div>
 
-      <div style={styles.mainGrid}>
+      <div style={styles.mainGrid} className="dashboard-main-grid">
         {/* Meetings List */}
         <div style={styles.section} className="glass-panel">
           <h3 style={styles.sectionTitle}>Meetings & Logs</h3>
@@ -194,6 +198,16 @@ export default function Dashboard({ user, token, onSelectMeeting, setActiveTab }
                           <span style={styles.metaSpan}>
                             <Clock size={13} style={{ marginRight: '4px' }} />
                             {meeting.duration} mins
+                          </span>
+                        )}
+                        {meeting.duration > 0 && meeting.deviceType && (
+                          <span style={styles.metaSpan}>
+                            {meeting.deviceType === 'Phone' ? (
+                              <Smartphone size={13} style={{ marginRight: '4px' }} color="var(--coral-accent)" />
+                            ) : (
+                              <Laptop size={13} style={{ marginRight: '4px' }} color="var(--violet-accent)" />
+                            )}
+                            {meeting.deviceType}
                           </span>
                         )}
                       </div>

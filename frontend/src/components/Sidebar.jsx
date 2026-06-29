@@ -9,7 +9,7 @@ import {
   Sparkles
 } from 'lucide-react';
 
-export default function Sidebar({ activeTab, setActiveTab, user, handleLogout }) {
+export default function Sidebar({ activeTab, setActiveTab, user, handleLogout, isOpen, setIsOpen, isMobile }) {
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'room', label: 'Meeting Room', icon: Mic },
@@ -18,7 +18,8 @@ export default function Sidebar({ activeTab, setActiveTab, user, handleLogout })
   ];
 
   return (
-    <aside style={styles.sidebar} className="glass-panel">
+    <aside style={styles.sidebar(isMobile, isOpen)} className="glass-panel">
+
       <div style={styles.brand}>
         <div style={styles.logoCircle}>
           <Sparkles size={18} color="#ffffff" />
@@ -72,7 +73,7 @@ export default function Sidebar({ activeTab, setActiveTab, user, handleLogout })
 }
 
 const styles = {
-  sidebar: {
+  sidebar: (isMobile, isOpen) => ({
     width: 'var(--sidebar-width)',
     height: '100vh',
     position: 'fixed',
@@ -80,13 +81,16 @@ const styles = {
     left: 0,
     display: 'flex',
     flexDirection: 'column',
-    borderRadius: '0 24px 24px 0',
+    borderRadius: isMobile ? '0' : '0 24px 24px 0',
     borderLeft: 'none',
     borderTop: 'none',
     borderBottom: 'none',
     zIndex: 100,
     padding: '30px 20px',
-  },
+    transform: isMobile ? (isOpen ? 'translateX(0)' : 'translateX(-100%)') : 'none',
+    transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+    background: 'rgba(13, 15, 23, 0.98)',
+  }),
   brand: {
     display: 'flex',
     alignItems: 'center',
