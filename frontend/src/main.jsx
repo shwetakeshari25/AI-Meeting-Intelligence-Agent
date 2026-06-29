@@ -252,13 +252,13 @@ window.fetch = async function (input, init) {
           stats: {
             totalMeetings: meetings.length,
             totalDuration,
-            avgProductivity: avgProd
-          },
-          tasks: {
-            total: tasks.length,
-            todo: tasks.filter(t => t.status === 'todo').length,
-            in_progress: tasks.filter(t => t.status === 'in_progress').length,
-            completed: tasks.filter(t => t.status === 'completed').length
+            avgProductivity: avgProd,
+            tasks: {
+              total: tasks.length,
+              todo: tasks.filter(t => t.status === 'todo').length,
+              in_progress: tasks.filter(t => t.status === 'in_progress').length,
+              completed: tasks.filter(t => t.status === 'completed').length
+            }
           },
           speakerBalance: [
             { name: 'Alok Singh', percentage: 40, color: 'var(--coral-accent)' },
