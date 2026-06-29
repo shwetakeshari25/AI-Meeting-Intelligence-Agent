@@ -59,6 +59,86 @@ app.use('/', (req, res) => {
     });
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
+
+// WebSocket Server for WebRTC signaling
+const WebSocket = require('ws');
+const wss = new WebSocket.Server({ server });
+const rooms = new Map();
+
+wss.on('connection', (ws) => {
+    let currentRoom = null;
+    let currentUser = null;
+
+    ws.on('message', (message) => {
+        try {
+            const data = JSON.parse(message);
+            switch (data.type) {
+                case 'join':
+                    currentRoom = data.meetingId;
+                    currentUser = data.userId || 'anonymous';
+                    if (!rooms.has(currentRoom)) {
+                        rooms.set(currentRoom, new Set());
+                    }
+                    ws.userId = currentUser;
+                    rooms.get(currentRoom).add(ws);
+                    
+                    // Notify others in room
+                    rooms.get(currentRoom).forEach(client => {
+                        if (client !== ws && client.readyState === WebSocket.OPEN) {
+                            client.send(JSON.stringify({
+                                type: 'peer-joined',
+                                userId: currentUser
+                            }));
+                        }
+                    });
+                    console.log(`User ${currentUser} joined room ${currentRoom} via WebSocket`);
+                    break;
+                case 'signal':
+                    if (currentRoom && rooms.has(currentRoom)) {
+                        rooms.get(currentRoom).forEach(client => {
+                            if (client !== ws && client.readyState === WebSocket.OPEN) {
+                                client.send(JSON.stringify({
+                                    type: 'signal',
+                                    sender: currentUser,
+                                    signal: data.signal
+                                }));
+                            }
+                        });
+                    }
+                    break;
+                case 'leave':
+                    handleLeave();
+                    break;
+            }
+        } catch (e) {
+            console.error('WS Error processing message:', e);
+        }
+    });
+
+    const handleLeave = () => {
+        if (currentRoom && rooms.has(currentRoom)) {
+            const roomClients = rooms.get(currentRoom);
+            roomClients.delete(ws);
+            roomClients.forEach(client => {
+                if (client.readyState === WebSocket.OPEN) {
+                    client.send(JSON.stringify({
+                        type: 'peer-left',
+                        userId: currentUser
+                    }));
+                }
+            });
+            if (roomClients.size === 0) {
+                rooms.delete(currentRoom);
+            }
+            console.log(`User ${currentUser} left room ${currentRoom}`);
+        }
+    };
+
+    ws.on('close', () => {
+        handleLeave();
+    });
+});
+
