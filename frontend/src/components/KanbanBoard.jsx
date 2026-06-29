@@ -9,6 +9,7 @@ import {
   ArrowLeft,
   Check
 } from 'lucide-react';
+import { getApiUrl } from '../config';
 
 export default function KanbanBoard({ token }) {
   const [tasks, setTasks] = useState([]);
@@ -31,7 +32,7 @@ export default function KanbanBoard({ token }) {
   const fetchTasks = async () => {
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:5001/api/tasks', {
+      const response = await fetch(`${getApiUrl()}/api/tasks`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
@@ -48,7 +49,7 @@ export default function KanbanBoard({ token }) {
     setError('');
 
     try {
-      const response = await fetch('http://localhost:5001/api/tasks', {
+      const response = await fetch(`${getApiUrl()}/api/tasks`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -73,7 +74,7 @@ export default function KanbanBoard({ token }) {
 
   const handleMoveTask = async (taskId, newStatus) => {
     try {
-      const response = await fetch(`http://localhost:5001/api/tasks/${taskId}`, {
+      const response = await fetch(`${getApiUrl()}/api/tasks/${taskId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -93,7 +94,7 @@ export default function KanbanBoard({ token }) {
 
   const handleDeleteTask = async (taskId) => {
     try {
-      const response = await fetch(`http://localhost:5001/api/tasks/${taskId}`, {
+      const response = await fetch(`${getApiUrl()}/api/tasks/${taskId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -137,7 +138,8 @@ export default function KanbanBoard({ token }) {
         <div style={styles.loading}>Loading action items...</div>
       ) : (
         /* Columns Grid */
-        <div style={styles.boardGrid}>
+        <div style={styles.boardGrid} className="kanban-board-grid">
+
           {/* TO DO Column */}
           <div style={styles.column} className="glass-panel">
             <div style={styles.columnHeader}>

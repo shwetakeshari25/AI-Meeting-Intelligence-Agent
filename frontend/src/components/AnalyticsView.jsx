@@ -7,6 +7,7 @@ import {
   Lightbulb, 
   AlertCircle 
 } from 'lucide-react';
+import { getApiUrl } from '../config';
 
 export default function AnalyticsView({ token }) {
   const [data, setData] = useState(null);
@@ -19,7 +20,7 @@ export default function AnalyticsView({ token }) {
   const fetchAnalytics = async () => {
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:5001/api/analytics/summary', {
+      const response = await fetch(`${getApiUrl()}/api/analytics/summary`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const resData = await response.json();
@@ -30,6 +31,7 @@ export default function AnalyticsView({ token }) {
       setLoading(false);
     }
   };
+
 
   // SVG Pie Chart Generator
   const renderDonutChart = () => {
@@ -186,7 +188,7 @@ export default function AnalyticsView({ token }) {
       {loading ? (
         <div style={styles.loading}>Analyzing workspace data...</div>
       ) : (
-        <div style={styles.grid}>
+        <div style={styles.grid} className="analytics-main-grid">
           {/* Left panel: Charts */}
           <div style={styles.leftCol}>
             {/* Timeline chart */}

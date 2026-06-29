@@ -10,10 +10,17 @@ import {
   Calendar,
   AlertCircle,
   CheckCircle,
-  ChevronRight
+  ChevronRight,
+  Video,
+  VideoOff,
+  Phone,
+  PhoneOff,
+  Laptop,
+  Smartphone
 } from 'lucide-react';
+import { getApiUrl, getWsUrl } from '../config';
 
-export default function MeetingRoom({ selectedMeeting, token, onMeetingUpdated, setActiveTab }) {
+export default function MeetingRoom({ selectedMeeting, token, onMeetingUpdated, setActiveTab, user }) {
   const [isRecording, setIsRecording] = useState(false);
   const [duration, setDuration] = useState(0);
   const [transcript, setTranscript] = useState([]);
@@ -22,16 +29,46 @@ export default function MeetingRoom({ selectedMeeting, token, onMeetingUpdated, 
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
   
+  // Camera & Mic tracking states (in seconds)
+  const [micOnTime, setMicOnTime] = useState(0);
+  const [cameraOnTime, setCameraOnTime] = useState(0);
+  
   // Results pane
   const [showResults, setShowResults] = useState(false);
   const [processedMeeting, setProcessedMeeting] = useState(null);
   const [extractedTasks, setExtractedTasks] = useState([]);
 
+  // WebRTC & WebSocket calling states
+  const [callActive, setCallActive] = useState(false);
+  const [callType, setCallType] = useState(null); // 'audio' | 'video'
+  const [localStream, setLocalStream] = useState(null);
+  const [remoteStream, setRemoteStream] = useState(null);
+  const [callStatus, setCallStatus] = useState('Disconnected'); // Disconnected, Connecting, Connected
+  const [isLocalMuted, setIsLocalMuted] = useState(false);
+  const [isLocalVideoOff, setIsLocalVideoOff] = useState(false);
+
+  const socketRef = useRef(null);
+  const peerConnectionRef = useRef(null);
+  const localVideoRef = useRef(null);
+  const remoteVideoRef = useRef(null);
+
   const recognitionRef = useRef(null);
   const durationIntervalRef = useRef(null);
   const transcriptEndRef = useRef(null);
 
+  // Synchronized refs to avoid stale closures in duration interval
+  const isLocalMutedRef = useRef(isLocalMuted);
+  const isLocalVideoOffRef = useRef(isLocalVideoOff);
+  const callActiveRef = useRef(callActive);
+  const callTypeRef = useRef(callType);
+
+  useEffect(() => { isLocalMutedRef.current = isLocalMuted; }, [isLocalMuted]);
+  useEffect(() => { isLocalVideoOffRef.current = isLocalVideoOff; }, [isLocalVideoOff]);
+  useEffect(() => { callActiveRef.current = callActive; }, [callActive]);
+  useEffect(() => { callTypeRef.current = callType; }, [callType]);
+
   const teamMembers = ['Alok Singh', 'Shweta Keshari', 'Harsh Pal', 'Abdul Rashid Ansari'];
+
 
   // Seed transcription simulation sentences
   const simulationPhrases = [
@@ -48,11 +85,21 @@ export default function MeetingRoom({ selectedMeeting, token, onMeetingUpdated, 
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [transcript]);
 
-  // Duration timer
+  // Duration timer & mic/camera active tracking
   useEffect(() => {
     if (isRecording) {
       durationIntervalRef.current = setInterval(() => {
         setDuration(prev => prev + 1);
+        
+        // Track Microphone (ON if recording and local is not muted)
+        if (!isLocalMutedRef.current) {
+          setMicOnTime(prev => prev + 1);
+        }
+        
+        // Track Camera (ON if video call is active and local camera is not off)
+        if (callActiveRef.current && callTypeRef.current === 'video' && !isLocalVideoOffRef.current) {
+          setCameraOnTime(prev => prev + 1);
+        }
       }, 1000);
     } else {
       if (durationIntervalRef.current) clearInterval(durationIntervalRef.current);
@@ -161,8 +208,12 @@ export default function MeetingRoom({ selectedMeeting, token, onMeetingUpdated, 
 
     const meetingDurationMinutes = Math.max(1, Math.ceil(duration / 60));
 
+    // Detect device type
+    const isMobileDevice = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const deviceType = isMobileDevice ? 'Phone' : 'Laptop/Desktop';
+
     try {
-      const response = await fetch(`http://localhost:5001/api/meetings/${selectedMeeting._id}/process`, {
+      const response = await fetch(`${getApiUrl()}/api/meetings/${selectedMeeting._id}/process`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -172,7 +223,10 @@ export default function MeetingRoom({ selectedMeeting, token, onMeetingUpdated, 
           title: selectedMeeting.title,
           transcript,
           duration: meetingDurationMinutes,
-          language: selectedLanguage
+          language: selectedLanguage,
+          deviceType,
+          micOnTime,
+          cameraOnTime
         })
       });
 
@@ -191,6 +245,206 @@ export default function MeetingRoom({ selectedMeeting, token, onMeetingUpdated, 
       setProcessing(false);
     }
   };
+
+  // WebRTC & signaling helpers
+  const initPeerConnection = (stream, type) => {
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    });
+    peerConnectionRef.current = pc;
+    
+    stream.getTracks().forEach(track => {
+      pc.addTrack(track, stream);
+    });
+    
+    pc.onicecandidate = (event) => {
+      if (event.candidate && socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+        socketRef.current.send(JSON.stringify({
+          type: 'signal',
+          meetingId: selectedMeeting._id,
+          signal: { candidate: event.candidate }
+        }));
+      }
+    };
+    
+    pc.ontrack = (event) => {
+      setRemoteStream(event.streams[0]);
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = event.streams[0];
+      }
+      setCallStatus('Connected');
+    };
+  };
+
+  const startCall = async (type) => {
+    try {
+      setCallActive(true);
+      setCallType(type);
+      setCallStatus('Connecting');
+      setError('');
+      
+      const constraints = {
+        audio: true,
+        video: type === 'video' ? { width: 320, height: 240, facingMode: 'user' } : false
+      };
+      
+      let stream = null;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        setLocalStream(stream);
+        setTimeout(() => {
+          if (localVideoRef.current && stream && type === 'video') {
+            localVideoRef.current.srcObject = stream;
+          }
+        }, 300);
+      } catch (err) {
+        console.warn('Insecure context or media block: running calling simulation fallback.', err);
+        setCallStatus('Connected (Simulated Link)');
+        setTimeout(() => {
+          setRemoteStream({ simulated: true });
+        }, 1500);
+      }
+      
+      const socket = new WebSocket(getWsUrl());
+      socketRef.current = socket;
+      
+      socket.onopen = () => {
+        socket.send(JSON.stringify({
+          type: 'join',
+          meetingId: selectedMeeting._id,
+          userId: user?.name || 'Anonymous User'
+        }));
+      };
+      
+      socket.onmessage = async (event) => {
+        const data = JSON.parse(event.data);
+        
+        if (data.type === 'peer-joined') {
+          setCallStatus('Calling Peer...');
+          if (stream) {
+            initPeerConnection(stream, type);
+            const offer = await peerConnectionRef.current.createOffer();
+            await peerConnectionRef.current.setLocalDescription(offer);
+            socket.send(JSON.stringify({
+              type: 'signal',
+              meetingId: selectedMeeting._id,
+              signal: { sdp: peerConnectionRef.current.localDescription }
+            }));
+          } else {
+            setCallStatus('Connected (Simulated Link)');
+            setRemoteStream({ simulated: true });
+          }
+        } else if (data.type === 'signal') {
+          const signal = data.signal;
+          if (signal.sdp) {
+            if (!peerConnectionRef.current && stream) {
+              initPeerConnection(stream, type);
+            }
+            if (peerConnectionRef.current) {
+              await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+              if (signal.sdp.type === 'offer') {
+                const answer = await peerConnectionRef.current.createAnswer();
+                await peerConnectionRef.current.setLocalDescription(answer);
+                socket.send(JSON.stringify({
+                  type: 'signal',
+                  meetingId: selectedMeeting._id,
+                  signal: { sdp: peerConnectionRef.current.localDescription }
+                }));
+              }
+            }
+          } else if (signal.candidate && peerConnectionRef.current) {
+            try {
+              await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(signal.candidate));
+            } catch (e) {
+              console.error('Error adding ICE candidate:', e);
+            }
+          }
+        } else if (data.type === 'peer-left') {
+          setCallStatus('Peer Disconnected');
+          setRemoteStream(null);
+          if (peerConnectionRef.current) {
+            peerConnectionRef.current.close();
+            peerConnectionRef.current = null;
+          }
+        }
+      };
+      
+      socket.onclose = () => {
+        if (callActive) {
+          setCallStatus('Disconnected');
+        }
+      };
+    } catch (err) {
+      console.error('Call initialization failed:', err);
+      setCallStatus('Failed to connect');
+    }
+  };
+
+  const endCall = () => {
+    setCallActive(false);
+    setCallStatus('Disconnected');
+    setCallType(null);
+    
+    if (localStream) {
+      localStream.getTracks().forEach(track => track.stop());
+      setLocalStream(null);
+    }
+    setRemoteStream(null);
+    
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
+    
+    if (socketRef.current) {
+      try {
+        socketRef.current.send(JSON.stringify({
+          type: 'leave',
+          meetingId: selectedMeeting._id
+        }));
+      } catch (e) {}
+      socketRef.current.close();
+      socketRef.current = null;
+    }
+  };
+
+  const toggleMute = () => {
+    if (localStream) {
+      const audioTrack = localStream.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled;
+        setIsLocalMuted(!audioTrack.enabled);
+      }
+    } else {
+      setIsLocalMuted(!isLocalMuted);
+    }
+  };
+
+  const toggleVideo = () => {
+    if (localStream && callType === 'video') {
+      const videoTrack = localStream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.enabled = !videoTrack.enabled;
+        setIsLocalVideoOff(!videoTrack.enabled);
+      }
+    } else if (callType === 'video') {
+      setIsLocalVideoOff(!isLocalVideoOff);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+      }
+      if (peerConnectionRef.current) {
+        peerConnectionRef.current.close();
+      }
+      if (socketRef.current) {
+        socketRef.current.close();
+      }
+    };
+  }, [localStream]);
 
   // Translate Mock
   const handleTranslate = (lang) => {
@@ -265,7 +519,7 @@ export default function MeetingRoom({ selectedMeeting, token, onMeetingUpdated, 
 
       {showResults ? (
         /* Post Meeting AI Summary Results View */
-        <div style={styles.resultsWrapper} className="fade-in">
+        <div style={styles.resultsWrapper} className="fade-in meeting-results-grid">
           <div style={styles.statsPanel} className="glass-panel">
             <h3 style={styles.resultsTitle}>
               <Sparkles size={20} color="var(--coral-accent)" />
@@ -284,6 +538,67 @@ export default function MeetingRoom({ selectedMeeting, token, onMeetingUpdated, 
               <div style={styles.metricItem}>
                 <div style={styles.metricVal}>{extractedTasks.length}</div>
                 <div style={styles.metricLabel}>Extracted Action Items</div>
+              </div>
+            </div>
+
+            {/* Device & Hardware Usage Metrics */}
+            <div style={{
+              background: 'rgba(255,255,255,0.01)',
+              border: '1px solid var(--panel-border)',
+              padding: '16px 20px',
+              borderRadius: '12px',
+              marginBottom: '20px'
+            }}>
+              <h4 style={{
+                fontSize: '12px',
+                color: 'var(--coral-accent)',
+                marginBottom: '12px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                fontWeight: '600'
+              }}>Hardware & Device Details</h4>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', alignItems: 'center' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Joined Via:</span>
+                  <span>
+                    {processedMeeting?.deviceType === 'Phone' ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#ffffff', fontWeight: '500' }}>
+                        <Smartphone size={14} color="var(--coral-accent)" /> Phone
+                      </span>
+                    ) : (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#ffffff', fontWeight: '500' }}>
+                        <Laptop size={14} color="var(--violet-accent)" /> Laptop/Desktop
+                      </span>
+                    )}
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', alignItems: 'center' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Microphone Usage:</span>
+                  <span style={{ display: 'inline-flex', gap: '10px' }}>
+                    <span style={{ color: 'var(--emerald-accent)', fontWeight: '600' }}>
+                      ON: {Math.floor((processedMeeting?.micOnTime || 0) / 60)}m {(processedMeeting?.micOnTime || 0) % 60}s
+                    </span>
+                    <span style={{ color: 'var(--text-muted)' }}>|</span>
+                    <span style={{ color: '#fb7185', fontWeight: '600' }}>
+                      OFF: {Math.floor(Math.max(0, (processedMeeting?.duration || 0) * 60 - (processedMeeting?.micOnTime || 0)) / 60)}m {Math.max(0, (processedMeeting?.duration || 0) * 60 - (processedMeeting?.micOnTime || 0)) % 60}s
+                    </span>
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', alignItems: 'center' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Camera Usage:</span>
+                  <span style={{ display: 'inline-flex', gap: '10px' }}>
+                    <span style={{ color: 'var(--emerald-accent)', fontWeight: '600' }}>
+                      ON: {Math.floor((processedMeeting?.cameraOnTime || 0) / 60)}m {(processedMeeting?.cameraOnTime || 0) % 60}s
+                    </span>
+                    <span style={{ color: 'var(--text-muted)' }}>|</span>
+                    <span style={{ color: '#fb7185', fontWeight: '600' }}>
+                      OFF: {Math.floor(Math.max(0, (processedMeeting?.duration || 0) * 60 - (processedMeeting?.cameraOnTime || 0)) / 60)}m {Math.max(0, (processedMeeting?.duration || 0) * 60 - (processedMeeting?.cameraOnTime || 0)) % 60}s
+                    </span>
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -383,6 +698,125 @@ export default function MeetingRoom({ selectedMeeting, token, onMeetingUpdated, 
                 <span>{processing ? 'Processing...' : 'End & Analyze Meeting'}</span>
               </button>
             </div>
+
+            {/* Real-Time Audio & Video Call Panel */}
+            {!callActive ? (
+              <div style={styles.callTriggerBox} className="glass-panel">
+                <h3 style={styles.sectionTitle}>Real-Time Connect</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '16px', lineHeight: '1.4' }}>
+                  Connect with team members over voice or video in real-time.
+                </p>
+                <div style={styles.callBtnGroup}>
+                  <button 
+                    onClick={() => startCall('audio')} 
+                    className="outline-btn"
+                    style={{ flex: 1, justifyContent: 'center', padding: '10px 14px', fontSize: '13px' }}
+                  >
+                    <Phone size={14} color="var(--emerald-accent)" style={{ marginRight: '4px' }} />
+                    <span>Voice Call</span>
+                  </button>
+                  <button 
+                    onClick={() => startCall('video')} 
+                    className="violet-glow-btn"
+                    style={{ flex: 1, justifyContent: 'center', padding: '10px 14px', fontSize: '13px' }}
+                  >
+                    <Video size={14} style={{ marginRight: '4px' }} />
+                    <span>Video Call</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={styles.callWorkspace} className="glass-panel">
+                <div style={styles.callHeader}>
+                  <div style={styles.callStatusBadge(callStatus)}>
+                    <span className="pulse-dot" style={{ width: '8px', height: '8px', background: callStatus.startsWith('Connected') ? 'var(--emerald-accent)' : 'var(--coral-accent)' }}></span>
+                    <span>{callStatus}</span>
+                  </div>
+                  <h4 style={{ margin: 0, fontSize: '14px', color: '#ffffff' }}>
+                    {callType === 'video' ? 'Video Meeting' : 'Voice Meeting'}
+                  </h4>
+                </div>
+
+                <div style={styles.videoGrid(callType)}>
+                  <div style={styles.videoWrapper}>
+                    {callType === 'video' && localStream && !isLocalVideoOff ? (
+                      <video 
+                        ref={localVideoRef} 
+                        autoPlay 
+                        playsInline 
+                        muted 
+                        style={styles.videoElement}
+                      />
+                    ) : (
+                      <div style={styles.videoPlaceholder}>
+                        <div style={styles.avatarCircle}>
+                          <User size={24} color="var(--coral-accent)" />
+                        </div>
+                        <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>You</span>
+                        {isLocalVideoOff && <span style={styles.miniStatusTag}>Video Off</span>}
+                        {isLocalMuted && <span style={styles.miniStatusTag}>Muted</span>}
+                      </div>
+                    )}
+                    <div style={styles.videoNameTag}>You</div>
+                  </div>
+
+                  <div style={styles.videoWrapper}>
+                    {callType === 'video' && remoteStream && !remoteStream.simulated ? (
+                      <video 
+                        ref={remoteVideoRef} 
+                        autoPlay 
+                        playsInline 
+                        style={styles.videoElement}
+                      />
+                    ) : (
+                      <div style={styles.videoPlaceholder}>
+                        <div style={styles.avatarCircle} className={callStatus.startsWith('Connected') ? 'pulse-avatar' : ''}>
+                          <User size={24} color="var(--violet-accent)" />
+                        </div>
+                        <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                          {callStatus.startsWith('Connected') ? 'Shweta Keshari' : 'Awaiting peer...'}
+                        </span>
+                        {callStatus.startsWith('Connected') && (
+                          <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
+                            <span style={styles.miniStatusTag}>Active</span>
+                            {callStatus.includes('Simulated') && <span style={{ ...styles.miniStatusTag, background: 'rgba(139, 92, 246, 0.15)', color: 'var(--violet-accent)' }}>Simulated</span>}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <div style={styles.videoNameTag}>Peer</div>
+                  </div>
+                </div>
+
+                <div style={styles.callControlsRow}>
+                  <button 
+                    onClick={toggleMute} 
+                    style={styles.callIconBtn(isLocalMuted)}
+                    title={isLocalMuted ? 'Unmute' : 'Mute'}
+                  >
+                    {isLocalMuted ? <MicOff size={16} /> : <Mic size={16} />}
+                  </button>
+
+                  {callType === 'video' && (
+                    <button 
+                      onClick={toggleVideo} 
+                      style={styles.callIconBtn(isLocalVideoOff)}
+                      title={isLocalVideoOff ? 'Camera On' : 'Camera Off'}
+                    >
+                      {isLocalVideoOff ? <VideoOff size={16} /> : <Video size={16} />}
+                    </button>
+                  )}
+
+                  <button 
+                    onClick={endCall} 
+                    style={{ ...styles.callIconBtn(true), backgroundColor: '#ef4444', color: '#ffffff', width: 'auto', padding: '8px 16px', borderRadius: '8px' }}
+                    title="Leave Connection"
+                  >
+                    <span style={{ fontSize: '12px', fontWeight: 'bold' }}>Disconnect</span>
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Agenda Panel */}
             <div style={styles.agendaPanel} className="glass-panel">

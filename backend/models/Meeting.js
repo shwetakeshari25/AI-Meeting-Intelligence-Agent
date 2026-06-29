@@ -54,6 +54,18 @@ const MeetingSchema = new mongoose.Schema({
         type: String,
         default: 'English'
     },
+    deviceType: {
+        type: String,
+        default: 'Laptop/Desktop'
+    },
+    micOnTime: {
+        type: Number,
+        default: 0
+    },
+    cameraOnTime: {
+        type: Number,
+        default: 0
+    },
     createdAt: {
         type: Date,
         default: Date.now

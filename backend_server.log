@@ -1,0 +1,12 @@
+Attempting to connect to MongoDB...
+Server is running on port 5001
+Memory database seeded successfully with fallback data!
+
+================================================================
+WARNING: Could not connect to MongoDB.
+Reason: connect ECONNREFUSED ::1:27017, connect ECONNREFUSED 127.0.0.1:27017
+FALLBACK: The server will run in MEMORY-STORE mode.
+All signup, login, meetings, and task changes will work but
+will reset when the server restarts.
+================================================================
+

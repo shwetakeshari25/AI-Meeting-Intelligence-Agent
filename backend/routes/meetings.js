@@ -176,7 +176,7 @@ router.post('/schedule', auth, async (req, res) => {
 // @desc    Post-process meeting (generate summary, extract tasks, compute productivity score)
 // @access  Private
 router.post('/:id/process', auth, async (req, res) => {
-    const { transcript, duration, language } = req.body;
+    const { transcript, duration, language, deviceType, micOnTime, cameraOnTime } = req.body;
 
     try {
         if (!transcript || !Array.isArray(transcript)) {
@@ -214,6 +214,9 @@ router.post('/:id/process', auth, async (req, res) => {
             meeting.summary = summaryText;
             meeting.productivityScore = score;
             if (language) meeting.language = language;
+            meeting.deviceType = deviceType || 'Laptop/Desktop';
+            meeting.micOnTime = micOnTime || 0;
+            meeting.cameraOnTime = cameraOnTime || 0;
 
             await meeting.save();
 
@@ -243,6 +246,9 @@ router.post('/:id/process', auth, async (req, res) => {
             meeting.summary = summaryText;
             meeting.productivityScore = score;
             if (language) meeting.language = language;
+            meeting.deviceType = deviceType || 'Laptop/Desktop';
+            meeting.micOnTime = micOnTime || 0;
+            meeting.cameraOnTime = cameraOnTime || 0;
 
             // Push tasks to memory
             const savedTasks = [];

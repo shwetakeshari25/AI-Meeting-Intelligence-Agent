@@ -44,6 +44,9 @@ const seedData = async () => {
             summary: 'The team kicked off the AI Meeting Intelligent project. Alok Singh led the meeting. Shweta Keshari summarized slide requirements. Harsh Pal took ownership of the MERN backend setup, while Abdul Rashid Ansari agreed to build the React components, including the Kanban board and SVG charts. Alok Singh emphasized the need for a premium dark glassmorphic design and user authentication.',
             productivityScore: 92,
             language: 'English',
+            deviceType: 'Laptop/Desktop',
+            micOnTime: 2100, // 35 mins ON, 10 mins OFF
+            cameraOnTime: 1800, // 30 mins ON, 15 mins OFF
             createdAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000)
         },
         {
@@ -67,6 +70,9 @@ const seedData = async () => {
             summary: 'The team reviewed backend APIs and the frontend design system. Harsh confirmed backend APIs are ready with a memory fallback. Abdul demonstrated the obsidian-coral-violet glassmorphic UI. Shweta recommended using Web Speech API for real-time transcription. Alok set the target to complete integration today.',
             productivityScore: 88,
             language: 'English',
+            deviceType: 'Phone',
+            micOnTime: 1620, // 27 mins ON, 3 mins OFF
+            cameraOnTime: 0, // 0 mins ON, 30 mins OFF
             createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000)
         }
     ];
